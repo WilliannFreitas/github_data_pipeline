@@ -4,10 +4,7 @@ import pandas as pd
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from datetime import datetime
-import logging
 
-# Configurações de logging
-logging.basicConfig(filename="process_log.log", level=logging.INFO, format="%(asctime)s - %(message)s")
 now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
 
@@ -16,13 +13,11 @@ def database_connection():
     load_dotenv()  # Carregar variáveis do arquivo .env
     PostgresURL = os.getenv("PostgresURL")  # Carregar a URL completa do banco de dados
     if not PostgresURL:
-        logging.error(f"{now} - A URL de conexão com o banco de dados não foi encontrada no .env")
-        raise ValueError("A URL de conexão com o banco de dados não foi encontrada no .env")
+        raise ValueError(f"{now} - A URL de conexão com o banco de dados não foi encontrada no .env")
 
     # Criando a conexão com o banco de dados
     engine = create_engine(PostgresURL)
     print(f"{now} - Conexão com o banco de dados bem-sucedida!")
-    logging.info(f"{now} - Conexão com o banco de dados bem-sucedida!")
     return engine
 
 
@@ -30,8 +25,7 @@ def database_connection():
 def fetch_github_users(numero_de_usuarios=100, usuarios_por_pagina=100):
     token = os.getenv("GITHUB_TOKEN")  # Carregar o token do GitHub do .env
     if not token:
-        logging.error(f"{now} - Token do GitHub não foi encontrado no .env")
-        raise ValueError("Token do GitHub não foi encontrado no .env")
+        raise ValueError(f"{now} - Token do GitHub não foi encontrado no .env")
 
     headers = {
         "Authorization": f"Bearer {token}"
@@ -48,6 +42,7 @@ def fetch_github_users(numero_de_usuarios=100, usuarios_por_pagina=100):
             dados_usuarios = response.json()
 
             for usuario in dados_usuarios:
+                # Coletar dados detalhados do perfil do usuário
                 url_usuario = usuario["url"]
                 response_usuario = requests.get(url_usuario, headers=headers)
 
@@ -69,18 +64,18 @@ def fetch_github_users(numero_de_usuarios=100, usuarios_por_pagina=100):
                         "URL Perfil": dados_detalhados["html_url"]
                     })
 
+                    # Parar a coleta quando atingirmos o número desejado de usuários
                     if len(lista_usuarios) >= numero_de_usuarios:
                         break
         else:
             print(f"{now} - Erro: {response.status_code}")
-            logging.error(f"{now} - Erro: {response.status_code}")
             break
 
+        # Atualiza a página para a próxima sequência de usuários
         pagina_inicial += usuarios_por_pagina
 
     df_usuarios = pd.DataFrame(lista_usuarios)
     print(f"{now} - Coleta de dados concluída!")
-    logging.info(f"{now} - Coleta de dados concluída!")
     return df_usuarios
 
 
@@ -88,26 +83,31 @@ def fetch_github_users(numero_de_usuarios=100, usuarios_por_pagina=100):
 def insert_into_database(engine, df, table_name, schema_name):
     if df.empty:
         print(f"{now} - DataFrame para {table_name} está vazio. Nenhuma inserção realizada.")
-        logging.warning(f"{now} - DataFrame para {table_name} está vazio. Nenhuma inserção realizada.")
         return
 
     df['data_hora_insercao'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     df.to_sql(table_name, engine, if_exists='replace', index=False, schema=schema_name)
     print(f"{now} - Dados inseridos com sucesso na tabela {table_name}")
-    logging.info(f"{now} - Dados inseridos com sucesso na tabela {table_name}")
 
 
 # Função principal para executar o processo completo
 def main():
     schema_name = "public"
-    table_name = "stage_usuarios_github"
+    table_name = "usuarios_github"
 
+    # Conectar ao banco de dados
     engine = database_connection()
 
+    # Coletar dados dos usuários do GitHub
     df_usuarios = fetch_github_users(numero_de_usuarios=1000, usuarios_por_pagina=100)
 
+    # Exibir os dados coletados
+    # print(df_usuarios)
+
+    # Inserir dados no banco de dados
     insert_into_database(engine, df_usuarios, table_name, schema_name)
 
 
+# Executa o script
 if __name__ == "__main__":
     main()
